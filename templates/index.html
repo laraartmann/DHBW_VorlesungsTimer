@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DHBW Timer // STG-TINF25D-KI</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏱</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-deep:    #060a13;
+      --bg-primary: #0a0e17;
+      --bg-card:    rgba(15, 23, 42, 0.55);
+      --bg-card-h:  rgba(15, 23, 42, 0.8);
+      --border:     rgba(0, 212, 255, 0.10);
+      --border-h:   rgba(0, 212, 255, 0.25);
+      --text-1:     #e2e8f0;
+      --text-2:     #94a3b8;
+      --text-m:     #475569;
+      --cyan:       #00d4ff;
+      --green:      #00ff88;
+      --amber:      #ffaa00;
+      --red:        #ff3366;
+      --ring-color: var(--cyan);
+      --ring-glow:  rgba(0, 212, 255, 0.35);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-deep);
+      color: var(--text-1);
+      font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code',
+                   'Source Code Pro', 'Consolas', monospace;
+      overflow-x: hidden;
+    }
+
+    /* ── Background Grid ──────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px);
+      background-size: 44px 44px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 30%, transparent 0%, var(--bg-deep) 72%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── App Shell ────────────────────────────────────────────── */
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 1.5rem 1.8rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ───────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.8rem 0 1rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2rem;
+    }
+    .logo {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--text-2);
+    }
+    .logo b { color: var(--cyan); font-weight: 700; }
+    .header-r {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      font-size: 0.78rem;
+      color: var(--text-m);
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .dot.err { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+    /* ── Timer Ring ───────────────────────────────────────────── */
+    .timer-wrap {
+      display: flex;
+      justify-content: center;
+      margin: 0.5rem 0 2.2rem;
+    }
+    .timer-box {
+      position: relative;
+      width: 270px; height: 270px;
+    }
+    .timer-svg {
+      width: 100%; height: 100%;
+      transform: rotate(-90deg);
+    }
+    .ring-track {
+      fill: none;
+      stroke: rgba(0, 212, 255, 0.07);
+      stroke-width: 5;
+    }
+    .ring-prog {
+      fill: none;
+      stroke: var(--ring-color);
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-dasharray: 816.81;
+      stroke-dashoffset: 0;
+      filter: drop-shadow(0 0 8px var(--ring-glow));
+      transition: stroke 0.8s ease;
+    }
+    .timer-txt {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .timer-val {
+      font-size: 3.1rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 22px var(--ring-glow);
+      transition: color 0.6s;
+    }
+    .timer-lbl {
+      font-size: 0.7rem;
+      color: var(--text-m);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      margin-top: 2px;
+    }
+
+    /* ── Info Cards ───────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.9rem;
+      margin-bottom: 1.4rem;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      backdrop-filter: blur(12px);
+      transition: background .3s, border-color .3s;
+    }
+    .card:hover { background: var(--bg-card-h); border-color: var(--border-h); }
+    .card-lbl {
+      font-size: 0.62rem;
+      color: var(--cyan);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 0.45rem;
+    }
+    .card-val {
+      font-size: 0.92rem;
+      font-weight: 500;
+      word-break: break-word;
+    }
+
+    /* ── Progress Bar ─────────────────────────────────────────── */
+    .prog-sec { margin-bottom: 1.4rem; }
+    .prog-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.62rem;
+      color: var(--text-m);
+      letter-spacing: 0.14em;
+      margin-bottom: 0.4rem;
+    }
+    .prog-bar {
+      height: 4px;
+      background: rgba(0, 212, 255, 0.07);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .prog-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--green));
+      border-radius: 2px;
+      transition: width 1s linear;
+      box-shadow: 0 0 10px var(--ring-glow);
+    }
+
+    /* ── Panels (Next / Schedule) ─────────────────────────────── */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 0.9rem;
+      backdrop-filter: blur(12px);
+    }
+    .panel-lbl {
+      font-size: 0.62rem;
+      color: var(--cyan);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 0.45rem;
+    }
+    .panel-val {
+      font-size: 0.84rem;
+      color: var(--text-2);
+    }
+
+    /* ── Schedule List ────────────────────────────────────────── */
+    .sched-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.45rem 0;
+      font-size: 0.78rem;
+      border-bottom: 1px solid rgba(255,255,255,0.025);
+    }
+    .sched-row:last-child { border-bottom: none; }
+    .sd { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .sd.done    { background: var(--text-m); opacity: .6; }
+    .sd.active  { background: var(--cyan); box-shadow: 0 0 7px var(--cyan); }
+    .sd.upcoming{ border: 1.5px solid var(--text-m); opacity: .5; }
+    .sched-time { color: var(--text-m); min-width: 105px; }
+    .sched-name { color: var(--text-2); flex: 1; }
+    .sched-row.active .sched-name { color: var(--cyan); font-weight: 500; }
+    .sched-room { color: var(--text-m); font-size: 0.72rem; }
+
+    /* ── Footer ───────────────────────────────────────────────── */
+    .footer {
+      margin-top: auto;
+      padding: 0.9rem 0 0.4rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      color: var(--text-m);
+    }
+
+    /* ── States ───────────────────────────────────────────────── */
+    .idle .timer-val { color: var(--text-m); text-shadow: none; }
+    .idle .ring-prog { stroke: rgba(0,212,255,0.04); filter: none; }
+
+    .urgent .timer-val { animation: urgPulse 0.9s ease-in-out infinite; }
+
+    .error-banner {
+      background: rgba(255, 51, 102, 0.08);
+      border: 1px solid rgba(255, 51, 102, 0.2);
+      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      margin-bottom: 1.2rem;
+      font-size: 0.78rem;
+      color: var(--red);
+      display: none;
+    }
+    .error-banner.show { display: block; }
+
+    /* ── Animations ───────────────────────────────────────────── */
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%     { opacity: .35; }
+    }
+    @keyframes urgPulse {
+      0%,100% { opacity: 1; }
+      50%     { opacity: .55; }
+    }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .cards { grid-template-columns: 1fr; }
+      .timer-box { width: 220px; height: 220px; }
+      .timer-val { font-size: 2.4rem; }
+      .app { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <span class="logo">// DHBW<b>.TIMER</b></span>
+    <div class="header-r">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">VERBINDE …</span>
+      <span id="clock">--:--</span>
+    </div>
+  </header>
+
+  <!-- Error Banner -->
+  <div class="error-banner" id="errorBanner"></div>
+
+  <!-- Timer Ring -->
+  <section class="timer-wrap" id="timerSection">
+    <div class="timer-box">
+      <svg class="timer-svg" viewBox="0 0 300 300">
+        <circle class="ring-track" cx="150" cy="150" r="130"/>
+        <circle class="ring-prog"  cx="150" cy="150" r="130" id="ringProg"/>
+      </svg>
+      <div class="timer-txt">
+        <div class="timer-val" id="timerVal">--:--</div>
+        <div class="timer-lbl" id="timerLbl">lade …</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Info Cards -->
+  <section class="cards">
+    <div class="card">
+      <div class="card-lbl">▸ Vorlesung</div>
+      <div class="card-val" id="cName">—</div>
+    </div>
+    <div class="card">
+      <div class="card-lbl">▸ Raum</div>
+      <div class="card-val" id="cRoom">—</div>
+    </div>
+    <div class="card">
+      <div class="card-lbl">▸ Zeitraum</div>
+      <div class="card-val" id="cTime">—</div>
+    </div>
+  </section>
+
+  <!-- Progress Bar -->
+  <section class="prog-sec">
+    <div class="prog-head">
+      <span>FORTSCHRITT</span>
+      <span id="progPct">—</span>
+    </div>
+    <div class="prog-bar">
+      <div class="prog-fill" id="progFill"></div>
+    </div>
+  </section>
+
+  <!-- Next Lecture -->
+  <div class="panel" id="nextPanel" style="display:none">
+    <div class="panel-lbl">▸ Nächste Vorlesung</div>
+    <div class="panel-val" id="nextInfo">—</div>
+  </div>
+
+  <!-- Today's Schedule -->
+  <div class="panel" id="schedPanel">
+    <div class="panel-lbl">▸ Heute</div>
+    <div id="schedList"></div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span>STG-TINF25D-KI</span>
+    <span id="lastUp">—</span>
+  </footer>
+
+</div>
+<script>
+(function () {
+  'use strict';
+
+  const CIRC     = 2 * Math.PI * 130;       // ≈ 816.81
+  const FETCH_MS = 15_000;
+
+  /* ── DOM ────────────────────────────────────── */
+  const $ = id => document.getElementById(id);
+  const d = {
+    statusDot: $('statusDot'), statusText: $('statusText'), clock: $('clock'),
+    timerSec: $('timerSection'), timerVal: $('timerVal'), timerLbl: $('timerLbl'),
+    ring: $('ringProg'),
+    cName: $('cName'), cRoom: $('cRoom'), cTime: $('cTime'),
+    progPct: $('progPct'), progFill: $('progFill'),
+    nextPanel: $('nextPanel'), nextInfo: $('nextInfo'),
+    schedList: $('schedList'),
+    lastUp: $('lastUp'),
+    errBanner: $('errorBanner'),
+  };
+
+  let state = { current: null, next: null, today: [], error: null };
+
+  /* ── Helpers ────────────────────────────────── */
+  const pad = n => String(n).padStart(2, '0');
+
+  function fmtTime(iso) {
+    const t = new Date(iso);
+    return pad(t.getHours()) + ':' + pad(t.getMinutes());
+  }
+
+  function fmtCountdown(sec) {
+    if (sec <= 0) return '00:00';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  }
+
+  function ringColor(rem, total) {
+    const r = rem / total;
+    if (r > 0.33) return { c: '#00d4ff', g: 'rgba(0,212,255,0.35)' };
+    if (r > 0.12) return { c: '#ffaa00', g: 'rgba(255,170,0,0.35)' };
+    return             { c: '#ff3366', g: 'rgba(255,51,102,0.40)' };
+  }
+
+  /* ── API ────────────────────────────────────── */
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/api/status');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      state = await r.json();
+      setConn(true, state.error);
+      renderSchedule();
+      renderNext();
+    } catch (e) {
+      state.error = e.message;
+      setConn(false);
+    }
+  }
+
+  /* ── UI Updates ─────────────────────────────── */
+  function setConn(ok, srvErr) {
+    if (!ok || srvErr) {
+      d.statusDot.className = 'dot err';
+      d.statusText.textContent = srvErr ? 'FEED FEHLER' : 'OFFLINE';
+      d.errBanner.textContent = '⚠ ' + (srvErr || 'Verbindung zum Server fehlgeschlagen');
+      d.errBanner.classList.add('show');
+    } else {
+      d.statusDot.className = 'dot';
+      d.statusText.textContent = 'VERBUNDEN';
+      d.errBanner.classList.remove('show');
+    }
+  }
+
+  function updateClock() {
+    const n = new Date();
+    d.clock.textContent = pad(n.getHours()) + ':' + pad(n.getMinutes());
+  }
+
+  function updateTimer() {
+    const now = new Date();
+
+    /* ── Idle ─────────────────────────────── */
+    if (!state.current) {
+      d.timerSec.classList.add('idle');
+      d.timerSec.classList.remove('urgent');
+      d.ring.style.strokeDashoffset = CIRC;
+      d.cName.textContent = '—';
+      d.cRoom.textContent = '—';
+      d.cTime.textContent = '—';
+      d.progPct.textContent = '—';
+      d.progFill.style.width = '0%';
+      document.documentElement.style.setProperty('--ring-color', '#1e293b');
+      document.documentElement.style.setProperty('--ring-glow', 'transparent');
+
+      if (state.next) {
+        const secTo = Math.max(0, (new Date(state.next.start) - now) / 1000);
+        d.timerVal.textContent = fmtCountdown(secTo);
+        d.timerLbl.textContent = 'bis nächste';
+      } else {
+        d.timerVal.textContent = '--:--';
+        d.timerLbl.textContent = 'keine vorlesung';
+      }
+      return;
+    }
+
+    /* ── Active ───────────────────────────── */
+    d.timerSec.classList.remove('idle');
+    const start   = new Date(state.current.start);
+    const end     = new Date(state.current.end);
+    const total   = (end - start) / 1000;
+    const remain  = Math.max(0, (end - now) / 1000);
+    const prog    = 1 - remain / total;
+
+    d.timerVal.textContent = fmtCountdown(remain);
+    d.timerLbl.textContent = 'verbleibend';
+
+    // Ring
+    d.ring.style.strokeDashoffset = CIRC * prog;
+    const { c, g } = ringColor(remain, total);
+    document.documentElement.style.setProperty('--ring-color', c);
+    document.documentElement.style.setProperty('--ring-glow',  g);
+
+    // Urgency
+    d.timerSec.classList.toggle('urgent', remain < 300);
+
+    // Info cards
+    d.cName.textContent = state.current.summary;
+    d.cRoom.textContent = state.current.location || '—';
+    d.cTime.textContent = fmtTime(state.current.start) + ' – ' + fmtTime(state.current.end);
+
+    // Progress bar
+    const pct = Math.min(100, Math.round(prog * 100));
+    d.progPct.textContent = pct + ' %';
+    d.progFill.style.width = pct + '%';
+
+    // Lecture ended → refetch
+    if (remain <= 0) fetchStatus();
+  }
+
+  function renderNext() {
+    if (!state.next) { d.nextPanel.style.display = 'none'; return; }
+    d.nextPanel.style.display = '';
+    const parts = [
+      state.next.summary,
+      state.next.location ? '📍 ' + state.next.location : '',
+      fmtTime(state.next.start) + ' – ' + fmtTime(state.next.end),
+    ].filter(Boolean);
+    d.nextInfo.textContent = parts.join('  ·  ');
+  }
+
+  function renderSchedule() {
+    if (!state.today || !state.today.length) {
+      d.schedList.innerHTML =
+        '<div style="color:var(--text-m);font-size:.78rem;padding:.4rem 0">Keine Vorlesungen heute</div>';
+      return;
+    }
+    const now = new Date();
+    d.schedList.innerHTML = state.today.map(ev => {
+      const s = new Date(ev.start), e = new Date(ev.end);
+      let st = 'upcoming';
+      if (e <= now) st = 'done';
+      else if (s <= now && now < e) st = 'active';
+      return `<div class="sched-row ${st}">
+        <span class="sd ${st}"></span>
+        <span class="sched-time">${fmtTime(ev.start)} – ${fmtTime(ev.end)}</span>
+        <span class="sched-name">${ev.summary}</span>
+        <span class="sched-room">${ev.location || ''}</span>
+      </div>`;
+    }).join('');
+  }
+
+  /* ── Main Loop ──────────────────────────────── */
+  function tick() {
+    updateClock();
+    updateTimer();
+    requestAnimationFrame(tick);
+  }
+
+  async function init() {
+    await fetchStatus();
+    d.lastUp.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+    setInterval(async () => {
+      await fetchStatus();
+      d.lastUp.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+    }, FETCH_MS);
+    requestAnimationFrame(tick);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
+
