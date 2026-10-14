@@ -3,30 +3,41 @@
 
 import sys
 import os
+import re
 import time
 import threading
 from datetime import datetime, timezone, timedelta
+from urllib.parse import quote
 
 if sys.platform == "win32":
     os.system("")
     sys.stdout.reconfigure(encoding="utf-8")
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 import requests as http_requests
 from icalendar import Calendar
 
 # ── Konfiguration ────────────────────────────────────────────────────────────
-ICS_URL = "https://dhbw.app/ical/STG-TINF25D-KI"
+ICS_URL = "https://dhbw.app/ical/{course}"
+COURSES_URL = "https://api.dhbw.app/courses"
+DEFAULT_COURSE = "STG-TINF25D-KI"
+# Nur Fallback, falls die Kursliste nicht erreichbar ist – Kursnamen enthalten
+# u. a. Umlaute, "_", "+", "#" und "." und können sehr lang sein.
+COURSE_RE = re.compile(r"^[^\s/\?]{2,100}$")
 REFRESH_INTERVAL = 300
+COURSES_REFRESH_INTERVAL = 24 * 3600
 USER_AGENT = "DHBW-LectureTimer/2.0"
 
 app = Flask(__name__)
 
-# ── Shared State ─────────────────────────────────────────────────────────────
-_calendar: Calendar | None = None
-_last_fetch: float = 0.0
+# ── Shared State (pro Kurs) ──────────────────────────────────────────────────
+_calendars: dict[str, Calendar] = {}
+_last_fetch: dict[str, float] = {}
+_fetch_errors: dict[str, str | None] = {}
 _lock = threading.Lock()
-_fetch_error: str | None = None
+
+_courses: list[str] = []
+_courses_fetch: float = 0.0
 
 
 def ensure_aware(dt: datetime) -> datetime:
@@ -36,32 +47,49 @@ def ensure_aware(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def refresh_calendar() -> bool:
-    """ICS-Feed herunterladen und parsen."""
-    global _calendar, _last_fetch, _fetch_error
+def refresh_calendar(course: str) -> bool:
+    """ICS-Feed eines Kurses herunterladen und parsen."""
     try:
         resp = http_requests.get(
-            ICS_URL,
+            ICS_URL.format(course=quote(course, safe="")),
             headers={"User-Agent": USER_AGENT},
             timeout=15,
         )
         resp.raise_for_status()
         cal = Calendar.from_ical(resp.text)
         with _lock:
-            _calendar = cal
-            _last_fetch = time.time()
-            _fetch_error = None
+            _calendars[course] = cal
+            _last_fetch[course] = time.time()
+            _fetch_errors[course] = None
         return True
     except Exception as exc:
         with _lock:
-            _fetch_error = str(exc)
+            _fetch_errors[course] = str(exc)
         return False
 
 
-def _parse_events() -> list[dict]:
-    """Alle Events aus dem gecachten Kalender extrahieren."""
+def refresh_courses() -> None:
+    """Kursliste von der DHBW.app-API laden."""
+    global _courses, _courses_fetch
+    try:
+        resp = http_requests.get(
+            COURSES_URL,
+            headers={"User-Agent": USER_AGENT},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        courses = sorted({c for c in resp.json() if isinstance(c, str)})
+        with _lock:
+            _courses = courses
+            _courses_fetch = time.time()
+    except Exception:
+        pass
+
+
+def _parse_events(course: str) -> list[dict]:
+    """Alle Events aus dem gecachten Kalender eines Kurses extrahieren."""
     with _lock:
-        cal = _calendar
+        cal = _calendars.get(course)
     if cal is None:
         return []
 
@@ -104,14 +132,43 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/kurse")
+def courses_page():
+    return render_template("courses.html")
+
+
+def get_courses() -> list[str]:
+    """Gecachte Kursliste, bei Bedarf neu geladen."""
+    if not _courses or (time.time() - _courses_fetch) >= COURSES_REFRESH_INTERVAL:
+        refresh_courses()
+    with _lock:
+        return list(_courses)
+
+
+def is_valid_course(course: str) -> bool:
+    courses = get_courses()
+    if courses:
+        return course in courses
+    return bool(COURSE_RE.match(course))
+
+
+@app.route("/api/courses")
+def api_courses():
+    return jsonify({"courses": get_courses(), "default": DEFAULT_COURSE})
+
+
 @app.route("/api/status")
 def api_status():
+    course = request.args.get("course", DEFAULT_COURSE).strip()
+    if not is_valid_course(course):
+        return jsonify({"error": f"Ungültiger Kurs: {course}"}), 400
+
     now_ts = time.time()
-    if _calendar is None or (now_ts - _last_fetch) >= REFRESH_INTERVAL:
-        refresh_calendar()
+    if course not in _calendars or (now_ts - _last_fetch.get(course, 0.0)) >= REFRESH_INTERVAL:
+        refresh_calendar(course)
 
     now = datetime.now(timezone.utc)
-    all_events = _parse_events()
+    all_events = _parse_events(course)
 
     current = None
     next_event = None
@@ -132,10 +189,11 @@ def api_status():
             next_event = ev
 
     with _lock:
-        error = _fetch_error
+        error = _fetch_errors.get(course)
 
     return jsonify(
         {
+            "course": course,
             "current": current,
             "next": next_event,
             "today": today_events,
@@ -149,7 +207,7 @@ def api_status():
 
 if __name__ == "__main__":
     print("🔄  Lade Kalender …")
-    if refresh_calendar():
+    if refresh_calendar(DEFAULT_COURSE):
         print("✅  Kalender geladen!")
     else:
         print("⚠   Kalender nicht erreichbar – Retry beim nächsten Request.")

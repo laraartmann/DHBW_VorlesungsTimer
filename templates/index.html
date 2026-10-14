@@ -101,6 +101,66 @@
     }
     .dot.err { background: var(--red); box-shadow: 0 0 8px var(--red); }
 
+    /* ── Course Bar ───────────────────────────────────────────── */
+    .course-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin: -1rem 0 1.6rem;
+      font-size: 0.78rem;
+    }
+    .course-lbl {
+      font-size: 0.62rem;
+      color: var(--cyan);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .course-pick {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.7rem;
+      color: var(--text-1);
+      text-decoration: none;
+      transition: background .3s, border-color .3s;
+    }
+    .course-pick:hover { background: var(--bg-card-h); border-color: var(--border-h); }
+    .course-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .course-change {
+      color: var(--text-m);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .btn-end {
+      margin-left: auto;
+      background: rgba(255, 51, 102, 0.08);
+      border: 1px solid rgba(255, 51, 102, 0.3);
+      border-radius: 6px;
+      padding: 0.45rem 0.8rem;
+      color: var(--red);
+      font: inherit;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .3s, box-shadow .3s;
+    }
+    .btn-end:hover {
+      background: rgba(255, 51, 102, 0.16);
+      box-shadow: 0 0 12px rgba(255, 51, 102, 0.25);
+    }
+
     /* ── Timer Ring ───────────────────────────────────────────── */
     .timer-wrap {
       display: flex;
@@ -292,6 +352,8 @@
       .timer-box { width: 220px; height: 220px; }
       .timer-val { font-size: 2.4rem; }
       .app { padding: 1rem; }
+      .course-bar { flex-wrap: wrap; }
+      .btn-end { margin-left: 0; width: 100%; }
     }
   </style>
 </head>
@@ -307,6 +369,17 @@
       <span id="clock">--:--</span>
     </div>
   </header>
+
+  <!-- Course Selection / Early Exit -->
+  <section class="course-bar">
+    <span class="course-lbl">▸ Kurs</span>
+    <a class="course-pick" id="coursePick" href="/kurse" title="Kurs aus der Liste wählen">
+      <span class="course-name" id="courseName">—</span>
+      <span class="course-change">ändern ›</span>
+    </a>
+    <button class="btn-end" id="btnEnd" type="button"
+            title="Exmatrikulation an der DHBW Stuttgart">⏏ Vorlesung beenden</button>
+  </section>
 
   <!-- Error Banner -->
   <div class="error-banner" id="errorBanner"></div>
@@ -377,6 +450,8 @@
 
   const CIRC     = 2 * Math.PI * 130;       // ≈ 816.81
   const FETCH_MS = 15_000;
+  const STORE_KEY = 'dhbwTimer.course';
+  const EXMAT_URL = 'https://www.dhbw-stuttgart.de/service/studienservice/exmatrikulation/';
 
   /* ── DOM ────────────────────────────────────── */
   const $ = id => document.getElementById(id);
@@ -390,9 +465,12 @@
     schedList: $('schedList'),
     lastUp: $('lastUp'),
     errBanner: $('errorBanner'),
+    coursePick: $('coursePick'), courseName: $('courseName'),
+    btnEnd: $('btnEnd'),
   };
 
   let state = { current: null, next: null, today: [], error: null };
+  let course = '';
 
   /* ── Helpers ────────────────────────────────── */
   const pad = n => String(n).padStart(2, '0');
@@ -419,18 +497,68 @@
 
   /* ── API ────────────────────────────────────── */
   async function fetchStatus() {
+    const reqCourse = course;
     try {
-      const r = await fetch('/api/status');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      state = await r.json();
+      const r = await fetch('/api/status?course=' + encodeURIComponent(reqCourse));
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const err = new Error(data.error || 'HTTP ' + r.status);
+        err.status = r.status;
+        throw err;
+      }
+      if (reqCourse !== course) return;   // Kurs wurde inzwischen gewechselt
+      state = data;
       setConn(true, state.error);
       renderSchedule();
       renderNext();
     } catch (e) {
       state.error = e.message;
-      setConn(false);
+      setConn(false, e.message);
+      return e.status;
     }
   }
+
+  /* ── Kursauswahl ────────────────────────────── */
+  function loadStoredCourse() {
+    try { return localStorage.getItem(STORE_KEY) || ''; } catch (_) { return ''; }
+  }
+
+  function storeCourse(c) {
+    try { localStorage.setItem(STORE_KEY, c); } catch (_) {}
+  }
+
+  async function loadDefaultCourse() {
+    try {
+      const r = await fetch('/api/courses');
+      if (r.ok) return (await r.json()).default;
+    } catch (_) {}
+    return 'STG-TINF25D-KI';
+  }
+
+  function setCourse(c) {
+    course = c;
+    storeCourse(c);
+    d.courseName.textContent = c;
+    d.coursePick.href = '/kurse?current=' + encodeURIComponent(c);
+    document.title = 'DHBW Timer // ' + c;
+    state = { current: null, next: null, today: [], error: null };
+  }
+
+  async function refresh() {
+    const status = await fetchStatus();
+    d.lastUp.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+    return status;
+  }
+
+  /* ── Vorzeitiges Vorlesungsende ─────────────── */
+  d.btnEnd.addEventListener('click', () => {
+    const ok = confirm(
+      'Vorlesung vorzeitig beenden?\n\n' +
+      'Du wirst zur Exmatrikulation der DHBW Stuttgart weitergeleitet. ' +
+      'Diese Entscheidung ist endgültig.'
+    );
+    if (ok) window.open(EXMAT_URL, '_blank', 'noopener');
+  });
 
   /* ── UI Updates ─────────────────────────────── */
   function setConn(ok, srvErr) {
@@ -552,12 +680,16 @@
   }
 
   async function init() {
-    await fetchStatus();
-    d.lastUp.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
-    setInterval(async () => {
-      await fetchStatus();
-      d.lastUp.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
-    }, FETCH_MS);
+    // Priorität: ?course=… (von /kurse) → zuletzt gewählter Kurs → Standard
+    const fromUrl = new URLSearchParams(location.search).get('course');
+    const def = await loadDefaultCourse();
+    setCourse(fromUrl || loadStoredCourse() || def);
+    if (fromUrl) history.replaceState(null, '', location.pathname);
+    if (await refresh() === 400 && course !== def) {
+      setCourse(def);                       // unbekannter Kurs → Standard
+      await refresh();
+    }
+    setInterval(refresh, FETCH_MS);
     requestAnimationFrame(tick);
   }
 

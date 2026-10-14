@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DHBW Timer // Kurswahl</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏱</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-deep:    #060a13;
+      --bg-card:    rgba(15, 23, 42, 0.55);
+      --bg-card-h:  rgba(15, 23, 42, 0.8);
+      --border:     rgba(0, 212, 255, 0.10);
+      --border-h:   rgba(0, 212, 255, 0.25);
+      --text-1:     #e2e8f0;
+      --text-2:     #94a3b8;
+      --text-m:     #475569;
+      --cyan:       #00d4ff;
+      --green:      #00ff88;
+      --red:        #ff3366;
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg-deep);
+      color: var(--text-1);
+      font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code',
+                   'Source Code Pro', 'Consolas', monospace;
+      overflow-x: hidden;
+    }
+
+    /* ── Background Grid ──────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px);
+      background-size: 44px 44px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── App Shell ────────────────────────────────────────────── */
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 1.5rem 1.8rem 3rem;
+    }
+
+    /* ── Header ───────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.8rem 0 1rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.6rem;
+    }
+    .logo {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--text-2);
+      text-decoration: none;
+    }
+    .logo b { color: var(--cyan); font-weight: 700; }
+    .back {
+      font-size: 0.72rem;
+      color: var(--text-m);
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .back:hover { color: var(--cyan); }
+
+    /* ── Toolbar (sticky) ─────────────────────────────────────── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--bg-deep);
+      padding: 0.6rem 0 0.9rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .search {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      color: var(--text-1);
+      font: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color .3s;
+    }
+    .search:focus { border-color: var(--border-h); }
+    .search::placeholder { color: var(--text-m); }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.8rem;
+    }
+    .chip {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.3rem 0.75rem;
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: background .2s, border-color .2s, color .2s;
+    }
+    .chip:hover { border-color: var(--border-h); }
+    .chip.on {
+      background: rgba(0, 212, 255, 0.12);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .chip small { color: var(--text-m); margin-left: 0.3rem; }
+
+    .meta {
+      margin-top: 0.7rem;
+      font-size: 0.68rem;
+      color: var(--text-m);
+      letter-spacing: 0.08em;
+    }
+
+    /* ── Course Groups ────────────────────────────────────────── */
+    .group { margin-bottom: 1.3rem; }
+    .group-lbl {
+      font-size: 0.62rem;
+      color: var(--cyan);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+    .group-lbl small { color: var(--text-m); margin-left: 0.4rem; letter-spacing: 0.08em; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 0.5rem;
+    }
+    .course {
+      display: block;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.55rem 0.75rem;
+      color: var(--text-1);
+      font-size: 0.8rem;
+      text-decoration: none;
+      word-break: break-word;
+      transition: background .2s, border-color .2s;
+    }
+    .course:hover, .course:focus-visible {
+      background: var(--bg-card-h);
+      border-color: var(--border-h);
+      outline: none;
+    }
+    .course.current {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .course mark { background: rgba(0, 212, 255, 0.2); color: var(--cyan); border-radius: 2px; }
+
+    .empty, .error {
+      padding: 2rem 0;
+      text-align: center;
+      font-size: 0.82rem;
+      color: var(--text-m);
+    }
+    .error { color: var(--red); }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .app { padding: 1rem 1rem 2rem; }
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header class="header">
+    <a class="logo" href="/">// DHBW<b>.TIMER</b></a>
+    <a class="back" href="/">‹ Zurück zum Timer</a>
+  </header>
+
+  <section class="toolbar">
+    <input class="search" id="search" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Kurs suchen, z.B. TINF25 oder WWI …" autofocus>
+    <div class="chips" id="chips"></div>
+    <div class="meta" id="meta">Lade Kursliste …</div>
+  </section>
+
+  <main id="list"></main>
+
+</div>
+<script>
+(function () {
+  'use strict';
+
+  const STORE_KEY  = 'dhbwTimer.course';
+  const FILTER_KEY = 'dhbwTimer.campus';
+
+  const CAMPUS = {
+    STG:  'Stuttgart',
+    MA:   'Mannheim',
+    KA:   'Karlsruhe',
+    MOS:  'Mosbach',
+    MGH:  'Bad Mergentheim',
+    HDH:  'Heidenheim',
+    HN:   'Heilbronn',
+    RV:   'Ravensburg',
+    FN:   'Friedrichshafen',
+    VS:   'Villingen-Schwenningen',
+    DHBW: 'Übergreifend',
+  };
+
+  const $ = id => document.getElementById(id);
+  const d = { search: $('search'), chips: $('chips'), meta: $('meta'), list: $('list') };
+
+  let courses = [];          // [{ name, campus, program, key }]
+  let campus  = 'STG';
+  let current = '';
+
+  /* ── Helpers ────────────────────────────────── */
+  const norm = s => s.toLowerCase().replace(/[-_\s]+/g, '');
+
+  function storageGet(k) { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } }
+  function storageSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+
+  function parseCourse(name) {
+    const i = name.indexOf('-');
+    const prefix = i > 0 ? name.slice(0, i) : name;
+    const rest   = i > 0 ? name.slice(i + 1).replace(/^-+/, '') : '';
+    // Studiengangskürzel = führende Buchstaben, z.B. "TINF" aus "TINF25D-KI"
+    const m = rest.match(/^[A-Za-zÄÖÜäöü]+/);
+    return {
+      name,
+      campus: CAMPUS[prefix] ? prefix : 'OTHER',
+      program: m ? m[0].toUpperCase() : 'Sonstige',
+      key: norm(name),
+    };
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  /** Kursname mit hervorgehobenen Suchtreffern (als DOM, kein innerHTML). */
+  function highlighted(name, terms) {
+    const frag = document.createDocumentFragment();
+    if (!terms.length) { frag.append(name); return frag; }
+    const lower = name.toLowerCase();
+    const marks = new Array(name.length).fill(false);
+    for (const t of terms) {
+      let i = lower.indexOf(t);
+      while (t && i !== -1) {
+        for (let k = i; k < i + t.length; k++) marks[k] = true;
+        i = lower.indexOf(t, i + 1);
+      }
+    }
+    let buf = '', on = false;
+    const flush = () => {
+      if (!buf) return;
+      frag.append(on ? el('mark', null, buf) : buf);
+      buf = '';
+    };
+    for (let k = 0; k < name.length; k++) {
+      if (marks[k] !== on) { flush(); on = marks[k]; }
+      buf += name[k];
+    }
+    flush();
+    return frag;
+  }
+
+  /* ── Rendering ──────────────────────────────── */
+  function renderChips() {
+    const counts = {};
+    for (const c of courses) counts[c.campus] = (counts[c.campus] || 0) + 1;
+    const entries = [['ALL', 'Alle', courses.length]];
+    for (const [k, label] of Object.entries(CAMPUS)) {
+      if (counts[k]) entries.push([k, label, counts[k]]);
+    }
+    if (counts.OTHER) entries.push(['OTHER', 'Sonstige', counts.OTHER]);
+
+    d.chips.replaceChildren(...entries.map(([k, label, n]) => {
+      const b = el('button', 'chip' + (k === campus ? ' on' : ''), label);
+      b.type = 'button';
+      b.append(el('small', null, n));
+      b.addEventListener('click', () => {
+        campus = k;
+        storageSet(FILTER_KEY, k);
+        renderChips();
+        renderList();
+      });
+      return b;
+    }));
+  }
+
+  function renderList() {
+    const raw   = d.search.value.trim().toLowerCase();
+    const terms = raw.split(/\s+/).filter(Boolean);
+    const nTerms = terms.map(norm);
+
+    // Bei aktiver Suche über alle Standorte suchen, wenn der Filter nichts findet
+    let hits = courses.filter(c =>
+      (campus === 'ALL' || c.campus === campus) &&
+      nTerms.every(t => c.key.includes(t)));
+    let widened = false;
+    if (!hits.length && terms.length && campus !== 'ALL') {
+      hits = courses.filter(c => nTerms.every(t => c.key.includes(t)));
+      widened = hits.length > 0;
+    }
+
+    // Gruppieren nach Standort + Studiengang
+    const groups = new Map();
+    for (const c of hits) {
+      const label = (campus === 'ALL' || widened)
+        ? `${CAMPUS[c.campus] || 'Sonstige'} · ${c.program}`
+        : c.program;
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(c);
+    }
+    const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'de'));
+
+    d.meta.textContent =
+      `${hits.length} Kurs${hits.length === 1 ? '' : 'e'} in ${sorted.length} Gruppe${sorted.length === 1 ? '' : 'n'}` +
+      (widened ? ' · keine Treffer am gewählten Standort, zeige alle Standorte' : '') +
+      (hits.length ? ' · Enter wählt den ersten Treffer' : '');
+
+    if (!hits.length) {
+      d.list.replaceChildren(el('div', 'empty', 'Keine Kurse gefunden.'));
+      return;
+    }
+
+    d.list.replaceChildren(...sorted.map(([label, list]) => {
+      const g = el('section', 'group');
+      const h = el('div', 'group-lbl', '▸ ' + label);
+      h.append(el('small', null, list.length));
+      const grid = el('div', 'grid');
+      list.sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+      for (const c of list) {
+        const a = el('a', 'course' + (c.name === current ? ' current' : ''));
+        a.href = '/?course=' + encodeURIComponent(c.name);
+        a.title = c.name;
+        a.append(highlighted(c.name, terms));
+        a.addEventListener('click', () => storageSet(STORE_KEY, c.name));
+        grid.append(a);
+      }
+      g.append(h, grid);
+      return g;
+    }));
+  }
+
+  /* ── Events ─────────────────────────────────── */
+  let debounce;
+  d.search.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(renderList, 80);
+  });
+  d.search.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const first = d.list.querySelector('a.course');
+      if (first) first.click();
+    } else if (e.key === 'Escape') {
+      d.search.value = '';
+      renderList();
+    }
+  });
+
+  /* ── Init ───────────────────────────────────── */
+  async function init() {
+    current = new URLSearchParams(location.search).get('current') || storageGet(STORE_KEY);
+    try {
+      const r = await fetch('/api/courses');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      if (!data.courses.length) throw new Error('Kursliste ist leer');
+      courses = data.courses.map(parseCourse);
+    } catch (e) {
+      d.meta.textContent = '';
+      d.list.replaceChildren(el('div', 'error', '⚠ Kursliste konnte nicht geladen werden: ' + e.message));
+      return;
+    }
+
+    // Standardfilter: gespeicherte Wahl → Standort des aktuellen Kurses → Stuttgart
+    const curCampus = current ? parseCourse(current).campus : '';
+    const stored = storageGet(FILTER_KEY);
+    campus = stored || curCampus || 'STG';
+    if (campus !== 'ALL' && !courses.some(c => c.campus === campus)) campus = 'ALL';
+
+    renderChips();
+    renderList();
+
+    // Aktuellen Kurs in den sichtbaren Bereich scrollen
+    const cur = d.list.querySelector('.course.current');
+    if (cur) cur.scrollIntoView({ block: 'center' });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
